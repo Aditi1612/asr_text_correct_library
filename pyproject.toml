@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asr-text-correct"
+version = "0.1.0"
+description = "In-process Korean ASR (fine-tuned Whisper) + Gemini transcript correction, with VAD-segmented streaming"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "torchaudio",
+    "transformers>=4.30",
+    "soundfile",
+    "numpy",
+    "google-genai",
+]
+
+[project.optional-dependencies]
+hub = ["huggingface_hub>=0.20"]
+vad = ["webrtcvad"]
+mic = ["sounddevice"]
+dev = ["pytest", "huggingface_hub>=0.20"]
+
+[tool.setuptools]
+packages = ["asr_text_correct"]

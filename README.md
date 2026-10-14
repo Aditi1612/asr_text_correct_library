@@ -76,10 +76,9 @@ source:
 
 ### A. Hugging Face Hub (use this off this server)
 
-The checkpoint is published to the **public** model repo
+The checkpoint is published to the **private** model repo
 [`fluffy16/whisper-ko-asr`](https://huggingface.co/fluffy16/whisper-ko-asr).
-No token is needed to download it. It holds only the inference files;
-optimizer and scheduler states are skipped.
+It holds only the inference files; optimizer and scheduler states are skipped.
 
 ```python
 ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")   # downloads + caches on first use
@@ -88,14 +87,15 @@ ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")   # downloads + caches on first 
 The env-var form is `export ASR_HF_REPO=fluffy16/whisper-ko-asr`, with no code
 change.
 
-If the repo is made private again, users need an account with read access,
+Because the repo is private, users need an account with read access,
 authenticated in any one of these ways:
 - `huggingface-cli login`
 - `export HF_TOKEN=hf_xxx`
 - `ASRCorrector(hf_repo=..., hf_token="hf_xxx")`
 
-Hugging Face can't share a personal private repo with individual users. In
-that case, move the repo to an organization, or make it gated.
+Hugging Face can't share a personal private repo with individual users. To give
+others access, move the repo to an HF organization and add them as members, or
+make it public but gated and approve each request.
 
 To pin an exact model version, pass `hf_revision="<commit-sha>"`.
 

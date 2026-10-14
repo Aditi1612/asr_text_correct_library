@@ -88,9 +88,14 @@ ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")   # downloads + caches on first 
 The env-var form is `export ASR_HF_REPO=fluffy16/whisper-ko-asr`, with no code
 change.
 
-The repo is private, so each user needs read access and a token. The repo owner
-grants access in the repo settings on Hugging Face (or by adding the user to an
-org that owns it). The user then authenticates in any one of these ways:
+The repo is private, so only accounts with read access can download it. Hugging
+Face can't share a personal private repo with individual users. To give others
+access, do one of the following:
+- Move the repo to an HF organization and add teammates to that org.
+- Make the repo public but gated, then approve each access request.
+- Give users a read token from an account that has access.
+
+Users then authenticate in any one of these ways:
 - `huggingface-cli login`
 - `export HF_TOKEN=hf_xxx`
 - `ASRCorrector(hf_repo=..., hf_token="hf_xxx")`

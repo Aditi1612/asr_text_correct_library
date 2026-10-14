@@ -76,7 +76,7 @@ source:
 
 ### A. Hugging Face Hub (use this off this server)
 
-The checkpoint is published to the **private** model repo
+The checkpoint is published to the **gated** model repo
 [`fluffy16/whisper-ko-asr`](https://huggingface.co/fluffy16/whisper-ko-asr).
 It holds only the inference files; optimizer and scheduler states are skipped.
 
@@ -87,15 +87,19 @@ ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")   # downloads + caches on first 
 The env-var form is `export ASR_HF_REPO=fluffy16/whisper-ko-asr`, with no code
 change.
 
-Because the repo is private, users need an account with read access,
-authenticated in any one of these ways:
-- `huggingface-cli login`
-- `export HF_TOKEN=hf_xxx`
-- `ASRCorrector(hf_repo=..., hf_token="hf_xxx")`
+Anyone can see the repo, but downloading the weights requires approval:
 
-Hugging Face can't share a personal private repo with individual users. To give
-others access, move the repo to an HF organization and add them as members, or
-make it public but gated and approve each request.
+1. Sign in to Hugging Face, open the model page, and click **Request access**.
+2. Wait for the owner to approve the request.
+3. Authenticate as that account, in any one of these ways:
+   - `huggingface-cli login`
+   - `export HF_TOKEN=hf_xxx`
+   - `ASRCorrector(hf_repo=..., hf_token="hf_xxx")`
+
+Without approval, or without a token, the download fails with `GatedRepoError`.
+
+The owner reviews pending requests on the model page, under
+**Settings → Gated user access**.
 
 To pin an exact model version, pass `hf_revision="<commit-sha>"`.
 

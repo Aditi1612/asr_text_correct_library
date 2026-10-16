@@ -11,3 +11,5 @@ dist/
 *.pt
 *.pth
 checkpoint/
+# local-only docs that contain credentials — never commit
+docs/private/

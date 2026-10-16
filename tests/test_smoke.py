@@ -1,8 +1,9 @@
 """Smoke tests.
 
-STT tests need the Whisper checkpoint (sibling reconstruction_production repo or
-ASR_MODEL_DIR) and a sample wav. Gemini tests need GEMINI_API_KEY(S); the
-fallback test needs neither network nor a valid key.
+STT tests need the Whisper checkpoint (ASR_HF_REPO, ASR_MODEL_DIR, or the
+sibling reconstruction_production repo) and a sample wav (tests/samples/*.wav).
+Gemini tests need GEMINI_API_KEY(S); the fallback test needs neither network
+nor a valid key.
 
     pytest -q            # from the library root
 """
@@ -24,7 +25,10 @@ _SAMPLE_GLOBS = [
     os.path.join(os.path.dirname(__file__), "samples", "*.wav"),
 ]
 
-needs_model = pytest.mark.skipif(default_model_dir() is None, reason="no checkpoint available")
+needs_model = pytest.mark.skipif(
+    default_model_dir() is None and not os.environ.get("ASR_HF_REPO"),
+    reason="no checkpoint available (set ASR_HF_REPO or ASR_MODEL_DIR)",
+)
 needs_gemini = pytest.mark.skipif(not gemini_api_keys_from_env(), reason="no GEMINI_API_KEY")
 
 

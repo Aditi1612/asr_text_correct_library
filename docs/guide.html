@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asr_text_correct — User Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 18mm 18mm;
+    @bottom-center {
+      content: "asr_text_correct user guide  ·  page " counter(page) " / " counter(pages);
+      font: 8pt "Helvetica Neue", Arial, sans-serif;
+      color: #999;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 10.5pt/1.5 "Helvetica Neue", Arial, "Noto Sans CJK KR", "NanumSquare", sans-serif;
+    color: #1a1a1a;
+    margin: 0;
+  }
+  h1 { font-size: 22pt; margin: 0 0 2pt; letter-spacing: -0.3pt; }
+  h2 {
+    font-size: 13pt; margin: 22pt 0 6pt; padding-bottom: 3pt;
+    border-bottom: 1.5pt solid #222; letter-spacing: -0.2pt;
+    break-after: avoid;
+  }
+  h3 { font-size: 10.5pt; margin: 12pt 0 4pt; break-after: avoid; }
+  p { margin: 4pt 0; }
+  .lede { color: #555; font-size: 11pt; margin-bottom: 4pt; }
+  code {
+    font-family: "SF Mono", "DejaVu Sans Mono", Consolas, "Noto Sans CJK KR", "NanumSquare", monospace;
+    font-size: 9pt;
+    background: #f2f2f2;
+    padding: 0.5pt 3pt;
+    border-radius: 2pt;
+  }
+  pre {
+    background: #1e1e21;
+    color: #e8e8e8;
+    padding: 9pt 11pt;
+    border-radius: 4pt;
+    font-family: "SF Mono", "DejaVu Sans Mono", Consolas, "Noto Sans CJK KR", "NanumSquare", monospace;
+    font-size: 8.5pt;
+    line-height: 1.45;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    break-inside: avoid;
+    margin: 6pt 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  .cmt { color: #8a8a8a; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 9pt;
+    margin: 6pt 0;
+    break-inside: avoid;
+  }
+  th, td {
+    border: 0.75pt solid #ccc;
+    padding: 4pt 7pt;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f0f0f0; font-weight: 600; }
+  .note {
+    background: #f6f8fa;
+    border-left: 3pt solid #999;
+    padding: 6pt 10pt;
+    margin: 8pt 0;
+    font-size: 9.5pt;
+    break-inside: avoid;
+  }
+  .warn { border-left-color: #c9821b; background: #fff8ef; }
+  ul, ol { margin: 4pt 0; padding-left: 18pt; }
+  li { margin: 2pt 0; }
+  a { color: #1a4fb4; text-decoration: none; }
+  .kv { color: #555; font-size: 9pt; margin-top: 2pt; }
+  .flow { font-family: "SF Mono", "DejaVu Sans Mono", Consolas, monospace; font-size: 9pt; color: #333; margin: 6pt 0; }
+  header.title { margin-bottom: 14pt; }
+</style>
+</head>
+<body>
+
+<header class="title">
+  <h1>asr_text_correct</h1>
+  <p class="lede">In-process Korean speech-to-text (fine-tuned Whisper large-v3) with Gemini transcript correction, plus near-real-time streaming.</p>
+  <p class="kv">GitHub: <a href="https://github.com/Aditi1612/asr_text_correct_library">github.com/Aditi1612/asr_text_correct_library</a>
+     &nbsp;·&nbsp; Model: <a href="https://huggingface.co/fluffy16/whisper-ko-asr">huggingface.co/fluffy16/whisper-ko-asr</a> (gated)
+     &nbsp;·&nbsp; v0.1.0</p>
+</header>
+
+<h2>What it is</h2>
+<p>
+  A Python library that runs the Korean ASR model <strong>directly inside your
+  application</strong>, with no HTTP server and no calls to the pipeline API.
+  You load the model once and call a function. Each transcript then goes to
+  Google Gemini, which fixes misheard syllables, spacing and grammar.
+</p>
+<p class="flow">audio &rarr; Whisper (fine-tuned, Korean) &rarr; transcript + confidence &rarr; Gemini &rarr; corrected_text</p>
+<ul>
+  <li><strong>One-shot</strong>: give it an audio file or waveform, and get back
+      both the raw transcript and the corrected text.</li>
+  <li><strong>Streaming</strong>: push microphone frames continuously. Each time
+      the speaker pauses, you get a corrected transcript of what they just said.</li>
+  <li><strong>Either half alone</strong>: STT only (no Gemini key needed), or
+      correction only (no model download needed).</li>
+</ul>
+<p>
+  The decode and correction paths are copies of the production pipeline code.
+  That covers the generation settings, text normalization, the repetition
+  filter, the correction prompt, and Gemini key rotation. Transcription uses a
+  fast greedy decode and needs about 4&nbsp;GB of GPU memory.
+</p>
+
+<h2>Before you start: two kinds of access</h2>
+<table>
+  <tr><th>What</th><th>Why</th><th>How to get it</th></tr>
+  <tr><td>Hugging Face access to the model</td>
+      <td>The model repo is <strong>gated</strong>. Only approved accounts can download the weights.</td>
+      <td>
+        <ol>
+          <li>Sign in at huggingface.co and open
+              <a href="https://huggingface.co/fluffy16/whisper-ko-asr">fluffy16/whisper-ko-asr</a>.</li>
+          <li>Click <strong>Request access</strong>. Skip this step if the
+              maintainer has already added your account.</li>
+          <li>Wait for approval.</li>
+          <li>Create a <strong>Read</strong> token at
+              <a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a>.</li>
+        </ol>
+      </td></tr>
+  <tr><td>A Gemini API key</td>
+      <td>Correction calls the Google Gemini API.</td>
+      <td>Create a key at <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>
+          (free tier available), or ask the maintainer for one.</td></tr>
+</table>
+<div class="note warn">
+  Treat both the HF token and the Gemini key as passwords. Don't commit them to
+  git or paste them into shared documents. Set them as environment variables
+  instead (see below).
+</div>
+
+<h2>Requirements</h2>
+<table>
+  <tr><th>Component</th><th>Notes</th></tr>
+  <tr><td>Python</td><td>3.9 or newer</td></tr>
+  <tr><td><code>torch</code>, <code>torchaudio</code></td>
+      <td>Install the build that matches your machine (CUDA or CPU) <em>first</em>. These are large and hardware-specific.</td></tr>
+  <tr><td>GPU</td><td><strong>Strongly recommended.</strong> An NVIDIA GPU with at least 4&nbsp;GB of free memory; the model runs in fp16. A CPU works but is much slower (see Performance).</td></tr>
+  <tr><td>RAM</td><td>About 8&nbsp;GB free for loading the model.</td></tr>
+  <tr><td>Disk</td><td>About 6.2&nbsp;GB for the model. It is downloaded once and cached in <code>~/.cache/huggingface</code>.</td></tr>
+  <tr><td>Network</td><td>Needed for the first model download and for every Gemini correction call.</td></tr>
+</table>
+
+<h2>Installation</h2>
+<pre><code><span class="cmt"># 1. install torch for your hardware (example: CUDA 12.1)</span>
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+<span class="cmt">#    ...or CPU-only:</span>
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+<span class="cmt"># 2. install the library (public GitHub repo)</span>
+pip install "asr-text-correct[hub] @ git+https://github.com/Aditi1612/asr_text_correct_library.git"
+
+<span class="cmt"># 3. credentials (put these in your shell profile or a .env your app loads)</span>
+huggingface-cli login                 <span class="cmt"># paste your HF Read token, or: export HF_TOKEN=hf_...</span>
+export GEMINI_API_KEY=your-gemini-key
+export ASR_HF_REPO=fluffy16/whisper-ko-asr   <span class="cmt"># optional: lets you omit hf_repo= in code</span></code></pre>
+
+<p>Optional extras:</p>
+<table>
+  <tr><th>Extra</th><th>Adds</th></tr>
+  <tr><td><code>[hub]</code></td><td>download the model from Hugging Face Hub (needed off the original server)</td></tr>
+  <tr><td><code>[vad]</code></td><td><code>webrtcvad</code>, which detects speech more accurately than the built-in energy fallback</td></tr>
+  <tr><td><code>[mic]</code></td><td><code>sounddevice</code>, only needed to run the microphone demo</td></tr>
+</table>
+
+<h2>Quick start: STT + correction</h2>
+<pre><code>from asr_text_correct import ASRCorrector
+
+pipe = ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")   <span class="cmt"># ~6 GB download on first run, then cached</span>
+
+r = pipe.process("clip.wav")
+r.transcript        <span class="cmt"># '나는 바지를 입고 단추를 채웁니다'    raw STT output</span>
+r.corrected_text    <span class="cmt"># '나는 바지를 입고 단추를 채웠다.'      after Gemini</span>
+r.confidence        <span class="cmt"># 0.899   STT confidence, 0..1</span>
+r.is_uncertain      <span class="cmt"># False   True if confidence &lt; 0.15 or the transcript is empty</span>
+r.correction_ok     <span class="cmt"># True    False if Gemini failed and the fallback was used</span>
+r.timings           <span class="cmt"># {'stt': 0.2, 'text_correction': 0.77, 'total': 0.97}</span>
+r.to_dict()         <span class="cmt"># everything above as a plain dict (JSON-serializable)</span></code></pre>
+<p>
+  <code>process()</code> accepts a file path, encoded bytes
+  (<code>wav/flac/ogg</code>, plus <code>mp3/m4a</code> when ffmpeg is present),
+  or a numpy / torch waveform passed with <code>input_sr=</code>.
+</p>
+<table>
+  <tr><th>Argument</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>language</code></td><td><code>"korean"</code></td><td>Whisper language; also accepts codes like <code>"KR"</code>, <code>"EN"</code></td></tr>
+  <tr><td><code>confidence_floor</code></td><td>0.15</td><td>below this confidence, <code>is_uncertain</code> is set to <code>True</code></td></tr>
+  <tr><td><code>reference_text</code></td><td>&mdash;</td><td>a ground-truth transcript; when given, <code>r.cer</code> (character error rate) is filled in</td></tr>
+  <tr><td><code>prompt</code></td><td>built-in</td><td>replaces the correction instructions for this call</td></tr>
+</table>
+
+<h3>Using only one half</h3>
+<pre><code>from asr_text_correct import Transcriber, GeminiCorrector
+
+<span class="cmt"># STT only: no Gemini key needed</span>
+asr = Transcriber(hf_repo="fluffy16/whisper-ko-asr")
+asr.transcribe("clip.wav")                    <span class="cmt"># -> str</span>
+asr.transcribe("clip.wav", detailed=True)     <span class="cmt"># -> dict with confidence / is_uncertain</span>
+
+<span class="cmt"># correction only: no model download, just a Gemini key</span>
+fix = GeminiCorrector()
+fix.correct("은 변원 앞에 있어요 약을 하우레 두 씩 드세요")
+<span class="cmt"># -> '병원 앞에 있어요. 약을 하루에 두 시 씩 드세요.'</span>
+
+<span class="cmt"># combine objects you already have</span>
+pipe = ASRCorrector(transcriber=asr, corrector=fix)</code></pre>
+
+<h2>Streaming (near real-time)</h2>
+<p>
+  Your app captures audio from any source and pushes mono float32 chunks of any
+  length. Each time the speaker pauses, the buffered utterance is transcribed,
+  corrected and returned. There are no partial results; you get one complete
+  transcript per utterance.
+</p>
+<pre><code>from asr_text_correct import ASRCorrector
+
+pipe = ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")
+stream = pipe.stream(on_segment=lambda s: print(s.text, "->", s.corrected_text))
+
+for chunk in your_mic_source():                       <span class="cmt"># e.g. 20-100 ms blocks, any sample rate</span>
+    for seg in stream.accept(chunk, input_sr=48000):  <span class="cmt"># resampled internally if needed</span>
+        handle(seg.corrected_text, seg.start_time, seg.end_time)
+
+stream.flush()                                        <span class="cmt"># finalize trailing speech when the stream ends</span></code></pre>
+<ul>
+  <li><code>accept()</code> returns a list of finished <code>Segment</code>
+      objects. It is usually empty, and holds one segment when an utterance has
+      just ended. Each segment has <code>.text</code> (raw STT),
+      <code>.corrected_text</code>, <code>.start_time</code> and
+      <code>.end_time</code>.</li>
+  <li><code>pipe.stream(correct=False)</code> skips Gemini, and
+      <code>corrected_text</code> is then <code>None</code>.</li>
+  <li>When an utterance ends, <code>accept()</code> blocks while STT and the
+      Gemini call run, typically 1&ndash;2 s on a GPU. If your audio capture
+      thread can't block, call <code>accept()</code> from a worker thread and
+      feed it through a queue.</li>
+  <li>A runnable microphone demo is in <code>examples/stream_mic.py</code>.</li>
+</ul>
+
+<h3>Tuning <code>pipe.stream(...)</code></h3>
+<table>
+  <tr><th>Argument</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>end_silence_ms</code></td><td>600</td><td>pause length that ends an utterance; this is roughly your perceived latency</td></tr>
+  <tr><td><code>min_speech_ms</code></td><td>250</td><td>utterances shorter than this are dropped as noise</td></tr>
+  <tr><td><code>max_speech_ms</code></td><td>15000</td><td>force-cut a segment that never pauses (Whisper's limit is 30&nbsp;s)</td></tr>
+  <tr><td><code>start_speech_frames</code></td><td>3</td><td>consecutive speech frames needed to start capturing</td></tr>
+  <tr><td><code>pre_roll_ms</code></td><td>200</td><td>audio kept from just before speech starts, so the first syllable isn't clipped</td></tr>
+  <tr><td><code>vad_aggressiveness</code></td><td>2</td><td>webrtcvad strictness 0&ndash;3 (higher = more aggressive about calling things non-speech)</td></tr>
+</table>
+
+<h2>Gemini settings</h2>
+<table>
+  <tr><th>Setting</th><th>How</th></tr>
+  <tr><td>API key</td><td><code>export GEMINI_API_KEY=...</code> &nbsp;or&nbsp; <code>ASRCorrector(api_key="...")</code></td></tr>
+  <tr><td>Several keys (rotation)</td><td><code>export GEMINI_API_KEYS=key1,key2,key3</code> &nbsp;or&nbsp; <code>api_keys=[...]</code>. Requests rotate across the keys, and a rate-limited (429) or failing key is skipped automatically.</td></tr>
+  <tr><td>Model</td><td><code>gemini-2.5-flash-lite</code> by default; change with <code>export GEMINI_MODEL=...</code> or <code>ASRCorrector(gemini_model="...")</code></td></tr>
+  <tr><td>Custom instructions</td><td><code>ASRCorrector(prompt="...")</code> or <code>process(..., prompt="...")</code>. The library appends the raw transcript after your text.</td></tr>
+</table>
+<div class="note">
+  <strong>If Gemini fails</strong> (a bad key, quota used up, or no network),
+  you still get a result. <code>corrected_text</code> falls back to the raw
+  transcript with extra spaces removed, and <code>correction_ok</code> is
+  <code>False</code>, so check it if correction matters to you. If you would
+  rather get an exception, use <code>GeminiCorrector(fallback=False)</code>.
+</div>
+
+<h2>Where the model comes from</h2>
+<p>Resolution priority: explicit path &rarr; Hugging Face repo &rarr; <code>ASR_MODEL_DIR</code> &rarr; local sibling checkout (original server only).</p>
+<table>
+  <tr><th>Source</th><th>How</th></tr>
+  <tr><td>Hugging Face Hub</td><td><code>ASRCorrector(hf_repo="fluffy16/whisper-ko-asr")</code> &nbsp;or&nbsp; <code>export ASR_HF_REPO=fluffy16/whisper-ko-asr</code></td></tr>
+  <tr><td>Local folder</td><td><code>ASRCorrector("/path/to/checkpoint")</code> &nbsp;or&nbsp; <code>export ASR_MODEL_DIR=/path/to/checkpoint</code></td></tr>
+  <tr><td>Pin a version</td><td><code>ASRCorrector(hf_repo="fluffy16/whisper-ko-asr", hf_revision="&lt;commit-sha&gt;")</code></td></tr>
+  <tr><td>Token in code</td><td><code>ASRCorrector(hf_repo=..., hf_token="hf_...")</code> (an alternative to <code>huggingface-cli login</code>)</td></tr>
+</table>
+
+<h2>Performance (measured on the original server)</h2>
+<p>Times are for the STT call only, with the model already loaded. Gemini correction adds about 0.5&ndash;1&nbsp;s per call, depending on the network.</p>
+<table>
+  <tr><th>Audio length</th><th>GPU (CUDA, fp16)</th><th>CPU (48 cores)</th></tr>
+  <tr><td>3.1 s</td><td>0.20 s</td><td>4.1 s</td></tr>
+  <tr><td>5.1 s</td><td>0.26 s</td><td>5.1 s</td></tr>
+  <tr><td>6.6 s</td><td>0.25 s</td><td>4.6 s</td></tr>
+</table>
+<ul>
+  <li><strong>GPU</strong>: about 0.2&ndash;0.3&nbsp;s per short clip, using about
+      3.9&nbsp;GB of GPU memory at peak (3.1&nbsp;GB for the model itself).</li>
+  <li><strong>CPU</strong>: about 4&ndash;5&nbsp;s per short clip, roughly
+      20&times; slower than the GPU. It's usable for occasional files, but too
+      slow for live streaming.</li>
+  <li><strong>Model load</strong>: about 10&nbsp;s from disk on the first start,
+      and 1&ndash;5&nbsp;s after that once the OS has the files cached.</li>
+  <li><strong>First download from Hugging Face</strong>: about 6.2&nbsp;GB. The
+      time depends on your network (about 50&nbsp;s on the original server), and
+      the files stay cached afterwards.</li>
+  <li>These figures were measured on a shared server. A GPU that is busy with
+      other jobs can be several times slower.</li>
+</ul>
+
+<h2>Limitations</h2>
+<ul>
+  <li>Correction is an AI rewrite. It can change verb endings or tense, add
+      punctuation, and occasionally guess wrong. Keep <code>r.transcript</code>
+      if you need the literal STT output.</li>
+  <li>STT output is normalized: Hangul, digits and spaces only, with no
+      punctuation. If the model gets stuck repeating itself, the transcript
+      comes back empty (<code>""</code>) and <code>is_uncertain</code> is
+      <code>True</code>.</li>
+  <li>Like all Whisper models, it can &ldquo;hear&rdquo; words in pure noise or
+      silence. On the sample set, real speech scored 0.88&ndash;0.91 confidence,
+      while 3&nbsp;s of noise produced a made-up word at 0.20. That is above the
+      default 0.15 threshold, so it was <em>not</em> flagged. If your audio may
+      contain no speech, raise the threshold, for example with
+      <code>process(..., confidence_floor=0.5)</code>.</li>
+  <li>The model transcribes whole utterances; there is no word-by-word live
+      output. &ldquo;Real-time&rdquo; means the transcript appears shortly after
+      each pause.</li>
+  <li>One <code>ASRCorrector</code> runs one transcription at a time. For
+      parallelism, use one instance per worker process.</li>
+  <li>The model is Korean only, fine-tuned for dysarthric / atypical speech.</li>
+  <li>Every correction sends the transcript text to Google's Gemini API. Make
+      sure that is acceptable for your data.</li>
+</ul>
+
+<h2>Updating</h2>
+<table>
+  <tr><th>When</th><th>Maintainer does</th><th>Users do</th></tr>
+  <tr><td>Library code changes</td><td><code>git push</code> to the GitHub repo</td>
+      <td><code>pip install --upgrade "asr-text-correct[hub] @ git+https://github.com/Aditi1612/asr_text_correct_library.git"</code></td></tr>
+  <tr><td>Model checkpoint changes</td><td>re-runs <code>examples/upload_to_hf.py</code></td>
+      <td>nothing; the next run pulls the new version (unless <code>hf_revision</code> is pinned)</td></tr>
+</table>
+
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td><code>GatedRepoError</code> or <code>401</code> when downloading</td><td>Your access hasn't been approved yet, or no token is set. Check the model page, then run <code>huggingface-cli login</code> or set <code>HF_TOKEN</code>.</td></tr>
+  <tr><td><code>No Whisper checkpoint found</code></td><td>pass <code>hf_repo=</code> / <code>model_dir=</code>, or set <code>ASR_HF_REPO</code></td></tr>
+  <tr><td><code>No Gemini API key found</code></td><td>set <code>GEMINI_API_KEY</code>, or pass <code>api_key=</code>. For STT only, use <code>Transcriber</code>.</td></tr>
+  <tr><td><code>correction_ok</code> is <code>False</code></td><td>Gemini failed. Check your logs for the warning (invalid key, quota, network). The raw transcript was returned instead.</td></tr>
+  <tr><td><code>Hugging Face Hub support needs 'huggingface_hub'</code></td><td>install with the <code>[hub]</code> extra</td></tr>
+  <tr><td>VAD backend is <code>energy</code>, detection is rough</td><td><code>pip install webrtcvad</code></td></tr>
+  <tr><td>mp3 / m4a files fail to decode</td><td>install ffmpeg on the system</td></tr>
+  <tr><td>CUDA out of memory</td><td>free GPU memory, or use <code>ASRCorrector(..., force_cpu=True)</code> (slow)</td></tr>
+</table>
+
+</body>
+</html>

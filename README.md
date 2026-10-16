@@ -8,14 +8,18 @@ correct clips or a live mic stream directly.
 
 This is a standalone package. It does **not** modify or import
 `APIs/reconstruction_production/`. By default it only reads the Whisper
-checkpoint from there. The inference path is a faithful copy of the serving
-code, so output matches the API's `/stt-text-correction` stage. That path
-covers `ko_norm`, the repetition filter, beam-search confidence/N-best, the
-correction prompt, and Gemini key rotation with fallback.
+checkpoint from there. The STT decode copies the serving code's greedy path:
+the same generation settings, `ko_norm` and the repetition filter. Correction
+uses the same prompt and Gemini key rotation with fallback.
+
+STT uses greedy decoding only. The serving pipeline's beam search (5 beams,
+N-best list) was dropped because it needs ~2.5× the GPU memory and is 3–4×
+slower. Confidence is taken from the greedy decode's own token probabilities
+instead.
 
 ```
 audio ──► Whisper (fine-tuned, ko) ──► transcript ──► Gemini ──► corrected_text
-          + confidence / N-best                       (key rotation, fallback)
+          greedy + confidence                         (key rotation, fallback)
 ```
 
 ## Install
@@ -131,23 +135,21 @@ With no arguments, the library auto-finds the sibling
 ```python
 from asr_text_correct import ASRCorrector
 
-pipe = ASRCorrector()                 # loads Whisper once (~3 GB VRAM fp16)
+pipe = ASRCorrector()                 # loads Whisper once (~3.1 GB VRAM fp16, ~3.9 GB peak)
 r = pipe.process("clip.wav")
 r.transcript        # '나는 바지를 입고 단추를 채웁니다'
 r.corrected_text    # '나는 바지를 입고 단추를 채웠다.'
-r.confidence        # 0.899   (beam-search, 0..1)
-r.nbest             # [{'rank': 1, 'transcription': ..., 'confidence': ...}, ...]
+r.confidence        # 0.899   (0..1, exp of mean token log-prob)
 r.is_uncertain      # True if confidence < 0.15 or empty transcript
 r.correction_ok     # False if the Gemini fallback was used
-r.timings           # {'stt': 0.76, 'text_correction': 0.77, 'total': 1.53}
+r.timings           # {'stt': 0.2, 'text_correction': 0.77, 'total': 0.97}
 r.to_dict()
 ```
 
 Options for `process()`:
 - `language="KR"` (or `"korean"`).
 - `reference_text=...` fills `r.cer`.
-- `detailed=False` switches to the faster greedy decode, which leaves
-  confidence and N-best empty.
+- `confidence_floor=...` changes the `is_uncertain` threshold (default 0.15).
 - `prompt=...` overrides the correction prompt for that call.
 
 `process()` accepts a file path, encoded bytes (`wav/flac/ogg`, plus `mp3/m4a`
@@ -159,8 +161,8 @@ if ffmpeg is present), or a numpy/torch waveform passed with `input_sr=`.
 from asr_text_correct import Transcriber, GeminiCorrector
 
 asr = Transcriber()                                  # STT only, no API key needed
-asr.transcribe("clip.wav")                           # greedy -> str
-asr.transcribe("clip.wav", detailed=True)            # beam -> dict with confidence / nbest
+asr.transcribe("clip.wav")                           # -> str
+asr.transcribe("clip.wav", detailed=True)            # -> dict with confidence / is_uncertain
 
 fix = GeminiCorrector()                              # correction only, no model load
 fix.correct("은 변원 앞에 있어요 약을 하우레 두 씩 드세요")
@@ -188,7 +190,6 @@ stream.flush()                                     # finalize trailing speech
 
 - `pipe.stream(correct=False)` and `Transcriber().stream()` return raw STT
   only, and `corrected_text` stays `None`.
-- Streaming uses the greedy decode to keep latency low.
 - `accept()` blocks while a finished utterance is transcribed and corrected.
   That takes about 0.3–0.8 s for STT plus one Gemini round-trip. If you can't
   block your capture thread, run the corrector in a worker.
@@ -225,7 +226,7 @@ asr_text_correct/
   hub.py           HF Hub download + one-time checkpoint upload
   audio.py         decode / resample to 16 kHz mono
   postprocess.py   ko_norm, repetition filter, CER   (vendored from 1_stt/transcribe.py)
-  engine.py        WhisperEngine: greedy + beam/confidence/N-best (mirrors 1_stt/transcribe.py)
+  engine.py        WhisperEngine: greedy decode + confidence (mirrors 1_stt/transcribe.py)
   corrector.py     GeminiCorrector: prompt, key rotation, fallback (mirrors 2_t2t + model_manager)
   transcriber.py   Transcriber, ASRCorrector, StreamingTranscriber, Segment, Result
   vad.py           webrtcvad wrapper + energy fallback

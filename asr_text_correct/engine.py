@@ -1,13 +1,15 @@
 """Low-level Whisper inference engine.
 
-Mirrors ``reconstruction_production/1_stt/transcribe.py`` (``transcribe_audio``
-and ``transcribe_audio_with_confidence``) so behavior matches the API, but with
-no FastAPI / web dependencies.
+Greedy decoding, mirroring ``transcribe_audio`` in
+``reconstruction_production/1_stt/transcribe.py`` so transcripts match the API,
+with no FastAPI / web dependencies. Unlike the serving path's beam search
+(~2.5x the GPU memory, 3-4x slower), confidence here comes from the greedy
+decode's own token probabilities.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -71,92 +73,46 @@ class WhisperEngine:
         *,
         language: Optional[str] = None,
         task: Optional[str] = None,
-        reference_text: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Greedy decode (fast path). Matches ``transcribe_audio`` in the serving code."""
-        features, mask = self._features(waveform)
-        kwargs = self._base_generate_kwargs(language, task)
-        kwargs["num_beams"] = 1
-        if mask is not None:
-            kwargs["attention_mask"] = mask
-
-        ids = self.model.generate(features, **kwargs)
-        raw = self.processor.batch_decode(ids, skip_special_tokens=True)[0]
-        text = "" if is_degenerate(raw) else ko_norm(raw)
-        return self._with_reference(
-            {"raw_transcription": raw, "transcription": text}, reference_text
-        )
-
-    @torch.inference_mode()
-    def transcribe_waveform_detailed(
-        self,
-        waveform: np.ndarray,
-        *,
-        language: Optional[str] = None,
-        task: Optional[str] = None,
-        num_beams: Optional[int] = None,
-        nbest: Optional[int] = None,
         confidence_floor: Optional[float] = None,
         reference_text: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Beam-search decode with a 0..1 confidence, N-best list and uncertainty flag.
+        """Greedy decode with a 0..1 confidence and an uncertainty flag.
 
-        Matches ``transcribe_audio_with_confidence`` in the serving code.
-        Confidence is ``exp(sequences_scores)`` — the beam's own length-normalized
-        mean token log-prob.
+        Confidence is ``exp(mean token log-prob)`` of the decoded sequence — the
+        same quantity the serving path's beam search reports, taken from the
+        single greedy hypothesis instead.
         """
-        num_beams = max(1, int(num_beams or self.config.num_beams))
-        nbest = max(1, min(int(nbest or self.config.nbest), num_beams))
         floor = self.config.confidence_floor if confidence_floor is None else confidence_floor
 
         features, mask = self._features(waveform)
         kwargs = self._base_generate_kwargs(language, task)
-        kwargs.update(
-            num_beams=num_beams,
-            num_return_sequences=num_beams,
-            output_scores=True,
-            return_dict_in_generate=True,
-        )
+        # Explicit: the checkpoint's generation_config defaults to num_beams=3.
+        kwargs.update(num_beams=1, output_scores=True, return_dict_in_generate=True)
         if mask is not None:
             kwargs["attention_mask"] = mask
 
-        outputs = self.model.generate(features, **kwargs)
-        # Deliberately not using compute_transition_scores(beam_indices): Whisper's
-        # generate() fills beam_indices out of range and that crashes CUDA.
-        scores = outputs.sequences_scores
+        out = self.model.generate(features, **kwargs)
+        raw = self.processor.batch_decode(out.sequences, skip_special_tokens=True)[0]
 
-        hypotheses: List[Dict[str, Any]] = []
-        for i in range(outputs.sequences.shape[0]):
-            confidence = float(np.exp(float(scores[i])))
-            raw = self.processor.batch_decode(
-                outputs.sequences[i].unsqueeze(0), skip_special_tokens=True
-            )[0]
+        token_logprobs = self.model.compute_transition_scores(
+            out.sequences, out.scores, normalize_logits=True
+        )[0].float()
+        token_logprobs = token_logprobs[torch.isfinite(token_logprobs)]
+        confidence = (
+            float(torch.exp(token_logprobs.mean())) if token_logprobs.numel() else 0.0
+        )
+
+        if is_degenerate(raw):
+            text = ""
+            confidence = min(confidence, 0.05)
+        else:
             text = ko_norm(raw)
-            if is_degenerate(text):
-                text = ""
-                confidence = min(confidence, 0.05)
-            hypotheses.append({"transcription": text, "confidence": confidence})
 
-        # Beams often collapse to the same normalized text; keep the best of each.
-        seen: set = set()
-        deduped: List[Dict[str, Any]] = []
-        for hyp in sorted(hypotheses, key=lambda h: h["confidence"], reverse=True):
-            if hyp["transcription"] in seen:
-                continue
-            seen.add(hyp["transcription"])
-            deduped.append(hyp)
-
-        top = deduped[:nbest] or [{"transcription": "", "confidence": 0.0}]
-        nbest_list = [
-            {"rank": r, "transcription": h["transcription"], "confidence": h["confidence"]}
-            for r, h in enumerate(top, start=1)
-        ]
-        best = nbest_list[0]
         result = {
-            "transcription": best["transcription"],
-            "confidence": best["confidence"],
-            "nbest": nbest_list,
-            "is_uncertain": bool(best["confidence"] < floor or not best["transcription"]),
+            "raw_transcription": raw,
+            "transcription": text,
+            "confidence": confidence,
+            "is_uncertain": bool(confidence < floor or not text),
         }
         return self._with_reference(result, reference_text)
 

@@ -71,7 +71,7 @@ class Transcriber:
         language: Optional[str] = None,
         reference_text: Optional[str] = None,
         detailed: bool = False,
-        **decode_kwargs,
+        confidence_floor: Optional[float] = None,
     ):
         """Return the normalized Hangul transcript for ``audio``.
 
@@ -79,21 +79,18 @@ class Transcriber:
         (pass ``input_sr`` for a raw waveform). ``language`` accepts ``"KR"`` or
         ``"korean"``.
 
-        ``detailed=False`` -> greedy decode, returns ``str``.
-        ``detailed=True``  -> beam search, returns a dict with ``transcription``,
-        ``confidence``, ``nbest``, ``is_uncertain`` (and ``cer`` if a reference
-        is given). Extra kwargs (``num_beams``, ``nbest``, ``confidence_floor``)
-        tune the beam search.
+        ``detailed=True`` returns the full dict instead of ``str``:
+        ``transcription``, ``raw_transcription``, ``confidence``,
+        ``is_uncertain`` (and ``cer`` if ``reference_text`` is given).
         """
         waveform = _audio.to_waveform(audio, input_sr=input_sr, target_sr=self.config.target_sr)
-        lang = resolve_language(language) if language else None
-        if detailed:
-            return self.engine.transcribe_waveform_detailed(
-                waveform, language=lang, reference_text=reference_text, **decode_kwargs
-            )
-        return self.engine.transcribe_waveform(
-            waveform, language=lang, reference_text=reference_text
-        )["transcription"]
+        result = self.engine.transcribe_waveform(
+            waveform,
+            language=resolve_language(language) if language else None,
+            confidence_floor=confidence_floor,
+            reference_text=reference_text,
+        )
+        return result if detailed else result["transcription"]
 
     def stream(self, **kwargs) -> "StreamingTranscriber":
         """Create a StreamingTranscriber backed by this model (no correction)."""
@@ -108,7 +105,6 @@ class Result:
     corrected_text: str
     correction_ok: bool
     confidence: Optional[float] = None
-    nbest: List[Dict[str, Any]] = field(default_factory=list)
     is_uncertain: bool = False
     cer: Optional[float] = None
     timings: Dict[str, float] = field(default_factory=dict)
@@ -165,29 +161,19 @@ class ASRCorrector:
         *,
         language: Optional[str] = None,
         reference_text: Optional[str] = None,
-        detailed: bool = True,
         prompt: Optional[str] = None,
-        **decode_kwargs,
+        confidence_floor: Optional[float] = None,
     ) -> Result:
-        """Transcribe ``audio`` then correct the transcript.
-
-        ``detailed=True`` (default, as in the serving pipeline) uses beam search
-        and fills ``confidence`` / ``nbest`` / ``is_uncertain``; ``False`` uses
-        the faster greedy decode.
-        """
+        """Transcribe ``audio`` then correct the transcript."""
         t0 = time.perf_counter()
-        if detailed:
-            stt = self.transcriber.transcribe(
-                audio, input_sr, language=language, reference_text=reference_text,
-                detailed=True, **decode_kwargs,
-            )
-        else:
-            waveform = _audio.to_waveform(audio, input_sr=input_sr, target_sr=self.sample_rate)
-            stt = self.transcriber.engine.transcribe_waveform(
-                waveform,
-                language=resolve_language(language) if language else None,
-                reference_text=reference_text,
-            )
+        stt = self.transcriber.transcribe(
+            audio,
+            input_sr,
+            language=language,
+            reference_text=reference_text,
+            detailed=True,
+            confidence_floor=confidence_floor,
+        )
         t1 = time.perf_counter()
         correction = self.corrector.correct_detailed(stt["transcription"], prompt=prompt)
         t2 = time.perf_counter()
@@ -196,10 +182,9 @@ class ASRCorrector:
             transcript=stt["transcription"],
             corrected_text=correction.text,
             correction_ok=correction.ok,
-            confidence=stt.get("confidence"),
-            nbest=stt.get("nbest", []),
-            is_uncertain=stt.get("is_uncertain", not stt["transcription"]),
-            cer=stt.get("cer"),
+            confidence=stt["confidence"],
+            is_uncertain=stt["is_uncertain"],
+            cer=stt["cer"],
             timings={"stt": t1 - t0, "text_correction": t2 - t1, "total": t2 - t0},
         )
 

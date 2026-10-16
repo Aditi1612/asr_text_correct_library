@@ -94,9 +94,9 @@ def test_transcribe_waveform_matches_file(asr, sample):
 @needs_model
 def test_transcribe_detailed(asr, sample):
     out = asr.transcribe(sample, detailed=True)
-    assert set(out) >= {"transcription", "confidence", "nbest", "is_uncertain"}
+    assert set(out) >= {"transcription", "raw_transcription", "confidence", "is_uncertain"}
     assert 0.0 <= out["confidence"] <= 1.0
-    assert out["nbest"][0]["rank"] == 1
+    assert out["transcription"] == asr.transcribe(sample)
 
 
 @needs_model

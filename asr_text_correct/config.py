@@ -74,9 +74,7 @@ class EngineConfig:
     use_half: bool = True
     max_length: int = 448
     no_repeat_ngram_size: int = 3
-    # Beam settings for detailed (confidence / N-best) decoding.
-    num_beams: int = 5
-    nbest: int = 3
+    # Below this confidence a transcript is flagged is_uncertain.
     confidence_floor: float = 0.15
 
     @classmethod

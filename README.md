@@ -230,6 +230,7 @@ asr_text_correct/
   corrector.py     GeminiCorrector: prompt, key rotation, fallback (mirrors 2_t2t + model_manager)
   transcriber.py   Transcriber, ASRCorrector, StreamingTranscriber, Segment, Result
   vad.py           webrtcvad wrapper + energy fallback
+docs/              user guide: guide.html + PDF (English), guide.ko.html + PDF (Korean)
 examples/          transcribe_file.py, correct_text.py, stream_mic.py, upload_to_hf.py
 tests/             test_smoke.py
 ```
